@@ -1,0 +1,4 @@
+rootProject.name = 'tac-shiro-spring-boot-starter'
+include 'tac-shiro-spring-boot-autoconfigure'
+include 'tac-shiro-spring-boot-support'
+
