@@ -1,0 +1,10 @@
+shiro:
+  enable-redirect: false
+  filter-chain-definition:
+    anon:
+      - /security/login
+  redirect-url:
+    login: /security/login
+    success: /security/success
+    unauthorized: /security/unauthorized
+
