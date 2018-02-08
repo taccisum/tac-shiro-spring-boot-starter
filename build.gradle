@@ -21,9 +21,7 @@ allprojects {
         }
         mavenCentral()
     }
-}
 
-subprojects {
     apply plugin: 'java'
     apply plugin: "org.springframework.boot"
     apply plugin: 'propdeps-idea'
@@ -90,4 +88,10 @@ subprojects {
     task sourceJar(type: Jar) {
         from sourceSets.main.allJava
     }
+}
+
+dependencies {
+    compile project(":tac-shiro-spring-boot-autoconfigure")
+    compile project(":tac-shiro-spring-boot-support")
+    testCompile(group: 'org.springframework.boot', name: 'spring-boot-starter-thymeleaf')
 }
