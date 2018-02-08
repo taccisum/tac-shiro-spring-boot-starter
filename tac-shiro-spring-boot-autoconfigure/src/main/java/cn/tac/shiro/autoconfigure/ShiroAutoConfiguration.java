@@ -35,6 +35,8 @@ import org.springframework.util.StringUtils;
 import javax.servlet.Filter;
 import java.util.*;
 
+import static cn.tac.shiro.support.config.util.FilterUtils.instanceForName;
+
 /**
  * @author tac
  * @since 1.0
@@ -53,20 +55,13 @@ public class ShiroAutoConfiguration {
         ShiroFilterFactoryBean bean = new ShiroFilterFactoryBean();
         bean.setSecurityManager(securityManager);
 
+        registerDefaultFilters(bean.getFilters());
         if (shiroProperties.getFilters() != null) {
             shiroProperties.getFilters().forEach((k, v) -> {
-                try {
-                    String className = StringUtils.isEmpty(shiroProperties.getFilterBasePackage()) ? v : shiroProperties.getFilterBasePackage() + "." + v;
-                    Class filterClazz = Class.forName(className);
-                    bean.getFilters().put(k, (Filter) filterClazz.newInstance());
-                    logger.info("注册类{}为shiro filter", filterClazz);
-                } catch (ClassNotFoundException e) {
-                    throw new RuntimeException(e);
-                } catch (IllegalAccessException e) {
-                    throw new RuntimeException(e);
-                } catch (InstantiationException e) {
-                    throw new RuntimeException(e);
-                }
+                String className = StringUtils.isEmpty(shiroProperties.getFilterBasePackage()) ? v : shiroProperties.getFilterBasePackage() + "." + v;
+                Filter filter = instanceForName(className);
+                bean.getFilters().put(k, filter);
+                logger.info("注册类{}为shiro filter", filter.getClass());
             });
         }
 
@@ -84,6 +79,12 @@ public class ShiroAutoConfiguration {
                     chain.put(url, filter);
                 }
             });
+        }
+
+        if (shiroProperties.getEnableRedirect()) {
+            chain.put("/**", "user");
+        } else {
+            chain.put("/**", "ajax_user");
         }
 
         bean.setFilterChainDefinitionMap(chain);
@@ -214,5 +215,12 @@ public class ShiroAutoConfiguration {
             }
         });
         authenticator.setAuthenticationListeners(listeners);
+    }
+
+    private void registerDefaultFilters(Map<String, Filter> filters) {
+        logger.info("注册默认shiro filter");
+        String ajaxUserFilterClassName = "cn.tac.shiro.support.config.filter.concrete.DefaultAjaxUserFilter";
+        logger.debug("ajax_user: {}", ajaxUserFilterClassName);
+        filters.put("ajax_user", instanceForName(ajaxUserFilterClassName));
     }
 }
