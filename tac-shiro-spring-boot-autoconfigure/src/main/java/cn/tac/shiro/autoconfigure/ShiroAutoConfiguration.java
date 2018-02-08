@@ -2,7 +2,8 @@ package cn.tac.shiro.autoconfigure;
 
 import cn.tac.shiro.support.config.ShiroProperties;
 import org.apache.shiro.SecurityUtils;
-import org.apache.shiro.authc.*;
+import org.apache.shiro.authc.AuthenticationListener;
+import org.apache.shiro.authc.Authenticator;
 import org.apache.shiro.authc.credential.CredentialsMatcher;
 import org.apache.shiro.authc.credential.HashedCredentialsMatcher;
 import org.apache.shiro.authc.pam.ModularRealmAuthenticator;
@@ -14,7 +15,6 @@ import org.apache.shiro.realm.text.IniRealm;
 import org.apache.shiro.session.mgt.SessionManager;
 import org.apache.shiro.spring.security.interceptor.AuthorizationAttributeSourceAdvisor;
 import org.apache.shiro.spring.web.ShiroFilterFactoryBean;
-import org.apache.shiro.subject.PrincipalCollection;
 import org.apache.shiro.web.mgt.CookieRememberMeManager;
 import org.apache.shiro.web.mgt.DefaultWebSecurityManager;
 import org.apache.shiro.web.servlet.Cookie;
@@ -33,7 +33,11 @@ import org.springframework.context.event.ContextRefreshedEvent;
 import org.springframework.util.StringUtils;
 
 import javax.servlet.Filter;
-import java.util.*;
+import java.util.Arrays;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 import static cn.tac.shiro.support.config.util.FilterUtils.instanceForName;
 
@@ -82,9 +86,9 @@ public class ShiroAutoConfiguration {
         }
 
         if (shiroProperties.getEnableRedirect()) {
-            chain.put("/**", "user");
+            chain.putIfAbsent("/**", "user");
         } else {
-            chain.put("/**", "ajax_user");
+            chain.putIfAbsent("/**", "ajax_user");
         }
 
         bean.setFilterChainDefinitionMap(chain);
@@ -180,7 +184,7 @@ public class ShiroAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public CacheManager cacheManager() {
-        //todo::
+        //todo:: 未实现
         return null;
     }
 
@@ -193,27 +197,8 @@ public class ShiroAutoConfiguration {
     @org.springframework.context.event.EventListener
     public void onContextInitOrRefresh(ContextRefreshedEvent event) {
         ModularRealmAuthenticator authenticator = event.getApplicationContext().getBean(ModularRealmAuthenticator.class);
-
-        //todo::
-        List<AuthenticationListener> listeners = new ArrayList<>();
-        listeners.add(new AuthenticationListener() {
-            @Override
-            public void onSuccess(AuthenticationToken token, AuthenticationInfo info) {
-                logger.info("authenticated success");
-            }
-
-            @Override
-            public void onFailure(AuthenticationToken token, AuthenticationException ae) {
-                logger.info("authenticated failure");
-                //do nothing
-            }
-
-            @Override
-            public void onLogout(PrincipalCollection principals) {
-                logger.info("log out");
-                //do nothing
-            }
-        });
+        List<AuthenticationListener> listeners = event.getApplicationContext().getBeansOfType(AuthenticationListener.class)
+                .values().stream().collect(Collectors.toList());
         authenticator.setAuthenticationListeners(listeners);
     }
 
