@@ -1,6 +1,7 @@
 package cn.tac.shiro.autoconfigure;
 
 import cn.tac.shiro.support.config.ShiroProperties;
+import cn.tac.shiro.support.config.reaml.SingleAccountRealm;
 import org.apache.shiro.SecurityUtils;
 import org.apache.shiro.authc.AuthenticationListener;
 import org.apache.shiro.authc.Authenticator;
@@ -10,6 +11,7 @@ import org.apache.shiro.authc.pam.ModularRealmAuthenticator;
 import org.apache.shiro.cache.CacheManager;
 import org.apache.shiro.mgt.RememberMeManager;
 import org.apache.shiro.mgt.SecurityManager;
+import org.apache.shiro.realm.AuthorizingRealm;
 import org.apache.shiro.realm.Realm;
 import org.apache.shiro.realm.text.IniRealm;
 import org.apache.shiro.session.mgt.SessionManager;
@@ -30,9 +32,11 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.event.ContextRefreshedEvent;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.util.StringUtils;
 
 import javax.servlet.Filter;
+import java.io.IOException;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -130,7 +134,13 @@ public class ShiroAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public Realm iniRealm(CredentialsMatcher credentialsMatcher) {
-        IniRealm bean = new IniRealm("classpath:shiro-web.ini");
+        AuthorizingRealm bean;
+        if (new ClassPathResource("shiro-web.ini").exists()) {
+            bean = new IniRealm("classpath:shiro-web.ini");
+        } else {
+            logger.warn("classpath:shiro-web.ini未找到，将使用{}代替", SingleAccountRealm.class);
+            bean = new SingleAccountRealm();
+        }
         bean.setCredentialsMatcher(credentialsMatcher);
         return bean;
     }
