@@ -8,9 +8,9 @@ import cn.tac.shiro.support.config.reaml.SimpleTokenRealm;
 import cn.tac.shiro.support.config.util.SecurityManagerHelper;
 import cn.tac.shiro.support.config.util.token.DefaultJWTTokenStrategy;
 import cn.tac.shiro.support.config.util.token.TokenUtils;
+import org.apache.commons.collections.CollectionUtils;
 import org.apache.shiro.SecurityUtils;
-import org.apache.shiro.authc.AuthenticationListener;
-import org.apache.shiro.authc.Authenticator;
+import org.apache.shiro.authc.*;
 import org.apache.shiro.authc.credential.CredentialsMatcher;
 import org.apache.shiro.authc.credential.HashedCredentialsMatcher;
 import org.apache.shiro.authc.pam.ModularRealmAuthenticator;
@@ -24,6 +24,7 @@ import org.apache.shiro.realm.text.IniRealm;
 import org.apache.shiro.session.mgt.SessionManager;
 import org.apache.shiro.spring.security.interceptor.AuthorizationAttributeSourceAdvisor;
 import org.apache.shiro.spring.web.ShiroFilterFactoryBean;
+import org.apache.shiro.subject.PrincipalCollection;
 import org.apache.shiro.web.mgt.CookieRememberMeManager;
 import org.apache.shiro.web.mgt.DefaultWebSecurityManager;
 import org.apache.shiro.web.servlet.Cookie;
@@ -242,7 +243,19 @@ public class ShiroAutoConfiguration {
         ModularRealmAuthenticator authenticator = event.getApplicationContext().getBean(ModularRealmAuthenticator.class);
         List<AuthenticationListener> listeners = event.getApplicationContext().getBeansOfType(AuthenticationListener.class)
                 .values().stream().collect(Collectors.toList());
-        authenticator.setAuthenticationListeners(listeners);
+        if (authenticator.getAuthenticationListeners() == null) {
+            authenticator.setAuthenticationListeners(new LinkedList<>());
+        }
+        if (CollectionUtils.isEmpty(listeners)) {
+            ShiroProperties shiroProperties = event.getApplicationContext().getBean(ShiroProperties.class);
+            if (Objects.equals(shiroProperties.getMode(), ShiroProperties.AuthenticationMode.SESSION)) {
+                //todo::
+            } else {
+                //todo::
+            }
+        } else {
+            authenticator.getAuthenticationListeners().addAll(listeners);
+        }
     }
 
     private void registerDefaultFilters(Map<String, Filter> filters, ShiroProperties shiroProperties) {
