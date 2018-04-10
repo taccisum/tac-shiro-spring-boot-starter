@@ -30,7 +30,7 @@ allprojects {
     sourceCompatibility = 1.8
 
     group 'cn.tac.shiro'
-    version '0.1-SNAPSHOT'
+    version '1.1-SNAPSHOT'
 
     dependencies {
         compile(
