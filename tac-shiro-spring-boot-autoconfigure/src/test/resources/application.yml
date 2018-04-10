@@ -1,0 +1,31 @@
+spring:
+  output:
+    ansi:
+      enabled: always
+
+---
+spring:
+  profiles: cache-enable-test
+shiro:
+  enable-cache: false
+
+---
+spring:
+  profiles: token-mode-test
+shiro:
+  mode: token
+
+---
+spring:
+  profiles: session-mode-test
+shiro:
+  mode: session
+
+---
+spring:
+  profiles: register-test
+shiro:
+  filter-base-package: cn.tac.shiro.autoconfigure
+  filters:
+    test: RegisterFilterTest$TestFilter
+    test1: RegisterFilterTest$TestFilterWithProperties

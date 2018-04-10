@@ -5,15 +5,18 @@ import org.apache.shiro.authz.AuthorizationInfo;
 import org.apache.shiro.realm.AuthorizingRealm;
 import org.apache.shiro.subject.PrincipalCollection;
 
-import java.util.Objects;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
- * 只有单个账号的realm
+ * 简单的realm
  *
  * @author tac
  * @since 1.0
  */
-public class SingleAccountRealm extends AuthorizingRealm {
+public class SimpleRealm extends AuthorizingRealm {
+    private Map<String, String> accounts = new HashMap<>();
+
     @Override
     protected AuthorizationInfo doGetAuthorizationInfo(PrincipalCollection principals) {
         return null;
@@ -22,9 +25,19 @@ public class SingleAccountRealm extends AuthorizingRealm {
     @Override
     protected AuthenticationInfo doGetAuthenticationInfo(AuthenticationToken token) throws AuthenticationException {
         UsernamePasswordToken t = (UsernamePasswordToken) token;
-        if (Objects.equals(t.getUsername(), "tac") && Objects.equals(t.getUsername(), "123456")) {
-            return new SimpleAuthenticationInfo(token.getPrincipal(), token.getCredentials(), getName());
+
+        if (contains(t.getUsername())) {
+            return new SimpleAuthenticationInfo(t.getUsername(), accounts.get(t.getUsername()), getName());
         }
         throw new AuthenticationException("user name or password mismatch");
     }
+
+    public void addAccount(String username, String password) {
+        accounts.putIfAbsent(username, password);
+    }
+
+    public boolean contains(String username) {
+        return accounts.containsKey(username);
+    }
 }
+

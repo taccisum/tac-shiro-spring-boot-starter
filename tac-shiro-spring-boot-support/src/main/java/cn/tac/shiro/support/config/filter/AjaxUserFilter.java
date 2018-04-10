@@ -19,12 +19,16 @@ public abstract class AjaxUserFilter extends UserFilter {
     @Override
     protected boolean onAccessDenied(ServletRequest request, ServletResponse response) throws Exception {
         saveRequest(request);
-        writeJson((HttpServletResponse) response, responseBody(), responseHttpStatus());
+        writeJson((HttpServletResponse) response, responseBody());
         return false;
     }
 
     protected HttpStatus responseHttpStatus() {
         return HttpStatus.OK;
+    }
+
+    protected void writeJson(HttpServletResponse response, String body) throws IOException {
+        writeJson(response, body, responseHttpStatus());
     }
 
     protected void writeJson(HttpServletResponse response, String body, HttpStatus status) throws IOException {
@@ -39,5 +43,7 @@ public abstract class AjaxUserFilter extends UserFilter {
         response.getWriter().write(body);
     }
 
-    protected abstract String responseBody();
+    protected String responseBody() {
+        return "{\"msg\": \"需要先登录\"}";
+    }
 }

@@ -1,6 +1,9 @@
 package cn.tac.shiro.support.config.util;
 
+import cn.tac.shiro.support.config.ShiroProperties;
+
 import javax.servlet.Filter;
+import java.lang.reflect.Constructor;
 
 /**
  * @author tac
@@ -19,9 +22,22 @@ public abstract class FilterUtils {
         Class<Filter> filterClazz = classForName(className);
         try {
             return filterClazz.newInstance();
-        } catch (InstantiationException e) {
+        } catch (Exception e) {
             throw new RuntimeException(e);
-        } catch (IllegalAccessException e) {
+        }
+    }
+
+    public static Filter instanceForName(String className, ShiroProperties shiroProperties) {
+        Class<Filter> filterClazz = classForName(className);
+        try {
+            Constructor<Filter> constructor;
+            try {
+                constructor = filterClazz.getConstructor(ShiroProperties.class);
+            } catch (NoSuchMethodException e) {
+                return filterClazz.newInstance();
+            }
+            return constructor.newInstance(shiroProperties);
+        } catch (Exception e) {
             throw new RuntimeException(e);
         }
     }

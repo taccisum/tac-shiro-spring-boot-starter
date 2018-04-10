@@ -1,7 +1,13 @@
 package cn.tac.shiro.autoconfigure;
 
+import cn.tac.shiro.autoconfigure.exception.AutoConfigureShiroException;
 import cn.tac.shiro.support.config.ShiroProperties;
-import cn.tac.shiro.support.config.reaml.SingleAccountRealm;
+import cn.tac.shiro.support.config.matcher.StatelessCredentialsMatcher;
+import cn.tac.shiro.support.config.reaml.SimpleRealm;
+import cn.tac.shiro.support.config.reaml.SimpleTokenRealm;
+import cn.tac.shiro.support.config.util.SecurityManagerHelper;
+import cn.tac.shiro.support.config.util.token.DefaultJWTTokenStrategy;
+import cn.tac.shiro.support.config.util.token.TokenUtils;
 import org.apache.shiro.SecurityUtils;
 import org.apache.shiro.authc.AuthenticationListener;
 import org.apache.shiro.authc.Authenticator;
@@ -9,6 +15,7 @@ import org.apache.shiro.authc.credential.CredentialsMatcher;
 import org.apache.shiro.authc.credential.HashedCredentialsMatcher;
 import org.apache.shiro.authc.pam.ModularRealmAuthenticator;
 import org.apache.shiro.cache.CacheManager;
+import org.apache.shiro.cache.MemoryConstrainedCacheManager;
 import org.apache.shiro.mgt.RememberMeManager;
 import org.apache.shiro.mgt.SecurityManager;
 import org.apache.shiro.realm.AuthorizingRealm;
@@ -25,7 +32,6 @@ import org.apache.shiro.web.session.mgt.DefaultWebSessionManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.aop.framework.autoproxy.DefaultAdvisorAutoProxyCreator;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -36,10 +42,7 @@ import org.springframework.core.io.ClassPathResource;
 import org.springframework.util.StringUtils;
 
 import javax.servlet.Filter;
-import java.util.Arrays;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.stream.Collectors;
 
 import static cn.tac.shiro.support.config.util.FilterUtils.instanceForName;
@@ -53,20 +56,19 @@ import static cn.tac.shiro.support.config.util.FilterUtils.instanceForName;
 @EnableConfigurationProperties(ShiroProperties.class)
 public class ShiroAutoConfiguration {
     private Logger logger = LoggerFactory.getLogger(this.getClass());
-    @Autowired
-    private ShiroProperties shiroProperties;
 
     @Bean
     @ConditionalOnMissingBean
-    public ShiroFilterFactoryBean shiroFilterFactoryBean(SecurityManager securityManager) {
+    public ShiroFilterFactoryBean shiroFilterFactoryBean(SecurityManager securityManager, ShiroProperties shiroProperties) {
         ShiroFilterFactoryBean bean = new ShiroFilterFactoryBean();
         bean.setSecurityManager(securityManager);
 
-        registerDefaultFilters(bean.getFilters());
+        registerDefaultFilters(bean.getFilters(), shiroProperties);
+
         if (shiroProperties.getFilters() != null) {
             shiroProperties.getFilters().forEach((k, v) -> {
                 String className = StringUtils.isEmpty(shiroProperties.getFilterBasePackage()) ? v : shiroProperties.getFilterBasePackage() + "." + v;
-                Filter filter = instanceForName(className);
+                Filter filter = instanceForName(className, shiroProperties);
                 bean.getFilters().put(k, filter);
                 logger.info("注册类{}为shiro filter", filter.getClass());
             });
@@ -99,6 +101,7 @@ public class ShiroAutoConfiguration {
     }
 
     @Bean
+    @ConditionalOnMissingBean
     public DefaultAdvisorAutoProxyCreator defaultAdvisorAutoProxyCreator() {
         DefaultAdvisorAutoProxyCreator bean = new DefaultAdvisorAutoProxyCreator();
         bean.setProxyTargetClass(true);
@@ -106,6 +109,7 @@ public class ShiroAutoConfiguration {
     }
 
     @Bean
+    @ConditionalOnMissingBean
     public AuthorizationAttributeSourceAdvisor authorizationAttributeSourceAdvisor(SecurityManager securityManager) {
         AuthorizationAttributeSourceAdvisor advisor = new AuthorizationAttributeSourceAdvisor();
         advisor.setSecurityManager(securityManager);
@@ -119,26 +123,47 @@ public class ShiroAutoConfiguration {
             SessionManager sessionManager,
             Authenticator authenticator,
             RememberMeManager rememberMeManager,
-            CacheManager cacheManager) {
+            CacheManager cacheManager,
+            ShiroProperties shiroProperties) {
         DefaultWebSecurityManager bean = new DefaultWebSecurityManager();
+
+        if (Objects.equals(ShiroProperties.AuthenticationMode.SESSION, shiroProperties.getMode())) {
+            logger.info("Shiro当前运行在SESSION模式");
+            bean.setSessionManager(sessionManager);
+            bean.setRememberMeManager(rememberMeManager);
+        } else if (Objects.equals(ShiroProperties.AuthenticationMode.TOKEN, shiroProperties.getMode())) {
+            logger.info("Shiro当前运行在TOKEN模式，所有与Session相关的操作将被禁止");
+            SecurityManagerHelper.disableSession(bean);
+        } else {
+            throw new AutoConfigureShiroException(String.format("暂不支持的认证模式：%s", shiroProperties.getMode().name()));
+        }
+
         bean.setRealm(realm);
-        bean.setSessionManager(sessionManager);
         bean.setAuthenticator(authenticator);
-        bean.setRememberMeManager(rememberMeManager);
-        bean.setCacheManager(cacheManager);
+        if (shiroProperties.getEnableCache()) {
+            bean.setCacheManager(cacheManager);
+        }
         SecurityUtils.setSecurityManager(bean);
         return bean;
     }
 
     @Bean
     @ConditionalOnMissingBean
-    public Realm iniRealm(CredentialsMatcher credentialsMatcher) {
+    public Realm realm(CredentialsMatcher credentialsMatcher, ShiroProperties shiroProperties) {
         AuthorizingRealm bean;
-        if (new ClassPathResource("shiro-web.ini").exists()) {
-            bean = new IniRealm("classpath:shiro-web.ini");
+        if (Objects.equals(shiroProperties.getMode(), ShiroProperties.AuthenticationMode.SESSION)) {
+            if (new ClassPathResource("shiro-web.ini").exists()) {
+                bean = new IniRealm("classpath:shiro-web.ini");
+            } else {
+                logger.warn("classpath:shiro-web.ini未找到，将使用{}代替", SimpleRealm.class);
+                SimpleRealm tmp = new SimpleRealm();
+                tmp.addAccount("admin", "123456");
+                bean = tmp;
+            }
         } else {
-            logger.warn("classpath:shiro-web.ini未找到，将使用{}代替", SingleAccountRealm.class);
-            bean = new SingleAccountRealm();
+            SimpleTokenRealm realm = new SimpleTokenRealm(shiroProperties);
+            TokenUtils.registerStrategy(shiroProperties.getToken().getType(), new DefaultJWTTokenStrategy(shiroProperties.getToken().getType()));
+            bean = realm;
         }
         bean.setCredentialsMatcher(credentialsMatcher);
         return bean;
@@ -149,22 +174,32 @@ public class ShiroAutoConfiguration {
      */
     @Bean
     @ConditionalOnMissingBean
-    public CredentialsMatcher credentialsMatcher() {
-        HashedCredentialsMatcher bean = new HashedCredentialsMatcher();
-        bean.setHashAlgorithmName("MD5");
-        bean.setHashIterations(5);
-        bean.setStoredCredentialsHexEncoded(true);
+    public CredentialsMatcher credentialsMatcher(ShiroProperties shiroProperties) {
+        CredentialsMatcher bean = null;
+        if (Objects.equals(shiroProperties.getMode(), ShiroProperties.AuthenticationMode.SESSION)) {
+            HashedCredentialsMatcher matcher = new HashedCredentialsMatcher();
+            matcher.setHashAlgorithmName(shiroProperties.getHashedCredentialsMatcher().getAlgorithmName());
+            matcher.setHashIterations(shiroProperties.getHashedCredentialsMatcher().getIterations());
+            matcher.setStoredCredentialsHexEncoded(shiroProperties.getHashedCredentialsMatcher().getStoredHex());
+            bean = matcher;
+        } else {
+            StatelessCredentialsMatcher matcher = new StatelessCredentialsMatcher();
+            bean = matcher;
+        }
         return bean;
     }
 
     @Bean
-    public SessionManager sessionManager() {
+//    todo:: 不能使用该注解
+//    @ConditionalOnMissingBean
+    public SessionManager sessionManager(ShiroProperties shiroProperties) {
         DefaultWebSessionManager bean = new DefaultWebSessionManager();
         bean.setGlobalSessionTimeout(shiroProperties.getSession().getTimeout());
         return bean;
     }
 
     @Bean
+//    @ConditionalOnMissingBean
     public Authenticator authenticator(Realm realm) {
         ModularRealmAuthenticator bean = new ModularRealmAuthenticator();
         bean.setRealms(Arrays.asList(realm));
@@ -174,11 +209,11 @@ public class ShiroAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public Cookie cookie() {
+    public Cookie cookie(ShiroProperties shiroProperties) {
         SimpleCookie bean = new SimpleCookie();
-        bean.setName("REMEMBER_ME");
-        bean.setHttpOnly(true);
-        bean.setMaxAge(2592000);    //30天
+        bean.setName(shiroProperties.getCookie().getName());
+        bean.setHttpOnly(shiroProperties.getCookie().getHttpOnly());
+        bean.setMaxAge(shiroProperties.getCookie().getMaxAge());
         return bean;
     }
 
@@ -193,8 +228,7 @@ public class ShiroAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public CacheManager cacheManager() {
-        //todo:: 未实现
-        return null;
+        return new MemoryConstrainedCacheManager();
     }
 
     /**
@@ -211,10 +245,16 @@ public class ShiroAutoConfiguration {
         authenticator.setAuthenticationListeners(listeners);
     }
 
-    private void registerDefaultFilters(Map<String, Filter> filters) {
-        logger.info("注册默认shiro filter");
-        String ajaxUserFilterClassName = "cn.tac.shiro.support.config.filter.concrete.DefaultAjaxUserFilter";
-        logger.debug("ajax_user: {}", ajaxUserFilterClassName);
-        filters.put("ajax_user", instanceForName(ajaxUserFilterClassName));
+    private void registerDefaultFilters(Map<String, Filter> filters, ShiroProperties shiroProperties) {
+        logger.info("为Shiro注册默认Filter");
+        String filterClassName;
+        if (Objects.equals(shiroProperties.getMode(), ShiroProperties.AuthenticationMode.SESSION)) {
+            filterClassName = "cn.tac.shiro.support.config.filter.concrete.DefaultAjaxUserFilter";
+            filters.put("ajax_user", instanceForName(filterClassName));
+        } else {
+            filterClassName = "cn.tac.shiro.support.config.filter.concrete.StatelessAjaxUserFilter";
+            filters.put("ajax_user", instanceForName(filterClassName, shiroProperties));
+        }
+        logger.debug("ajax_user: {}", filterClassName);
     }
 }
