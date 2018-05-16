@@ -2,6 +2,8 @@ package cn.tac.shiro.autoconfigure;
 
 import cn.tac.shiro.autoconfigure.exception.AutoConfigureShiroException;
 import cn.tac.shiro.support.config.ShiroProperties;
+import cn.tac.shiro.support.config.filter.concrete.DefaultAjaxUserFilter;
+import cn.tac.shiro.support.config.filter.concrete.StatelessAjaxUserFilter;
 import cn.tac.shiro.support.config.matcher.StatelessCredentialsMatcher;
 import cn.tac.shiro.support.config.reaml.SimpleRealm;
 import cn.tac.shiro.support.config.reaml.SimpleTokenRealm;
@@ -10,7 +12,8 @@ import cn.tac.shiro.support.config.util.token.DefaultJWTTokenStrategy;
 import cn.tac.shiro.support.config.util.token.TokenUtils;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.shiro.SecurityUtils;
-import org.apache.shiro.authc.*;
+import org.apache.shiro.authc.AuthenticationListener;
+import org.apache.shiro.authc.Authenticator;
 import org.apache.shiro.authc.credential.CredentialsMatcher;
 import org.apache.shiro.authc.credential.HashedCredentialsMatcher;
 import org.apache.shiro.authc.pam.ModularRealmAuthenticator;
@@ -24,7 +27,6 @@ import org.apache.shiro.realm.text.IniRealm;
 import org.apache.shiro.session.mgt.SessionManager;
 import org.apache.shiro.spring.security.interceptor.AuthorizationAttributeSourceAdvisor;
 import org.apache.shiro.spring.web.ShiroFilterFactoryBean;
-import org.apache.shiro.subject.PrincipalCollection;
 import org.apache.shiro.web.mgt.CookieRememberMeManager;
 import org.apache.shiro.web.mgt.DefaultWebSecurityManager;
 import org.apache.shiro.web.servlet.Cookie;
@@ -33,9 +35,13 @@ import org.apache.shiro.web.session.mgt.DefaultWebSessionManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.aop.framework.autoproxy.DefaultAdvisorAutoProxyCreator;
+import org.springframework.beans.BeansException;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.context.ApplicationContext;
+import org.springframework.context.ApplicationContextAware;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.event.ContextRefreshedEvent;
@@ -46,6 +52,7 @@ import javax.servlet.Filter;
 import java.util.*;
 import java.util.stream.Collectors;
 
+import static cn.tac.shiro.support.config.util.FilterUtils.classForName;
 import static cn.tac.shiro.support.config.util.FilterUtils.instanceForName;
 
 /**
@@ -55,8 +62,23 @@ import static cn.tac.shiro.support.config.util.FilterUtils.instanceForName;
 @Configuration
 @ConditionalOnClass(ShiroProperties.class)
 @EnableConfigurationProperties(ShiroProperties.class)
-public class ShiroAutoConfiguration {
+public class ShiroAutoConfiguration implements ApplicationContextAware {
     private Logger logger = LoggerFactory.getLogger(this.getClass());
+    private ApplicationContext context;
+
+    @Bean
+    @ConditionalOnProperty(name = "shiro.mode", havingValue = "SESSION", matchIfMissing = true)
+    @ConditionalOnMissingBean
+    public DefaultAjaxUserFilter defaultAjaxUserFilter() {
+        return new DefaultAjaxUserFilter();
+    }
+
+    @Bean
+    @ConditionalOnProperty(name = "shiro.mode", havingValue = "TOKEN")
+    @ConditionalOnMissingBean
+    public StatelessAjaxUserFilter statelessAjaxUserFilter(ShiroProperties shiroProperties) {
+        return new StatelessAjaxUserFilter(shiroProperties);
+    }
 
     @Bean
     @ConditionalOnMissingBean
@@ -69,7 +91,13 @@ public class ShiroAutoConfiguration {
         if (shiroProperties.getFilters() != null) {
             shiroProperties.getFilters().forEach((k, v) -> {
                 String className = StringUtils.isEmpty(shiroProperties.getFilterBasePackage()) ? v : shiroProperties.getFilterBasePackage() + "." + v;
-                Filter filter = instanceForName(className, shiroProperties);
+                Filter filter;
+                try {
+                    filter = (Filter) context.getBean(classForName(className));
+                } catch (BeansException e) {
+                    logger.warn(className + "未注册为spring bean，将尝试降级处理");
+                    filter = instanceForName(className, shiroProperties);
+                }
                 bean.getFilters().put(k, filter);
                 logger.info("注册类{}为shiro filter", filter.getClass());
             });
@@ -262,12 +290,17 @@ public class ShiroAutoConfiguration {
         logger.info("为Shiro注册默认Filter");
         String filterClassName;
         if (Objects.equals(shiroProperties.getMode(), ShiroProperties.AuthenticationMode.SESSION)) {
-            filterClassName = "cn.tac.shiro.support.config.filter.concrete.DefaultAjaxUserFilter";
-            filters.put("ajax_user", instanceForName(filterClassName));
+            filterClassName = DefaultAjaxUserFilter.class.getName();
+            filters.put("ajax_user", context.getBean(DefaultAjaxUserFilter.class));
         } else {
-            filterClassName = "cn.tac.shiro.support.config.filter.concrete.StatelessAjaxUserFilter";
-            filters.put("ajax_user", instanceForName(filterClassName, shiroProperties));
+            filterClassName = StatelessAjaxUserFilter.class.getName();
+            filters.put("ajax_user", context.getBean(StatelessAjaxUserFilter.class));
         }
         logger.debug("ajax_user: {}", filterClassName);
+    }
+
+    @Override
+    public void setApplicationContext(ApplicationContext applicationContext) throws BeansException {
+        this.context = applicationContext;
     }
 }

@@ -28,4 +28,4 @@ shiro:
   filter-base-package: cn.tac.shiro.autoconfigure
   filters:
     test: RegisterFilterTest$TestFilter
-    test1: RegisterFilterTest$TestFilterWithProperties
+    test1: RegisterFilterTest$TestFilterWithPropertiesAndWithoutSpring

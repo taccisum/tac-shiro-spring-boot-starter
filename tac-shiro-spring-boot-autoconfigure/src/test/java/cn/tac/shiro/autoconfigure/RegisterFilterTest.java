@@ -8,6 +8,7 @@ import org.junit.runner.RunWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.stereotype.Component;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.junit4.SpringRunner;
 
@@ -41,9 +42,10 @@ public class RegisterFilterTest {
 
         Filter filter1 = filters.get("test1");
         assertThat(filter1).isNotNull();
-        assertThat(filter1).isInstanceOf(TestFilterWithProperties.class);
+        assertThat(filter1).isInstanceOf(TestFilterWithPropertiesAndWithoutSpring.class);
     }
 
+    @Component
     public static class TestFilter extends AjaxUserFilter {
         @Override
         protected String responseBody() {
@@ -51,10 +53,10 @@ public class RegisterFilterTest {
         }
     }
 
-    public static class TestFilterWithProperties extends AjaxUserFilter {
+    public static class TestFilterWithPropertiesAndWithoutSpring extends AjaxUserFilter {
         private ShiroProperties shiroProperties;
 
-        public TestFilterWithProperties(ShiroProperties shiroProperties) {
+        public TestFilterWithPropertiesAndWithoutSpring(ShiroProperties shiroProperties) {
             Objects.requireNonNull(shiroProperties, "shiro properties");
             this.shiroProperties = shiroProperties;
         }
